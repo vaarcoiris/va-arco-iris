@@ -1,0 +1,66 @@
+{
+  "name": "VA'ARCO-ÍRIS - Tally to YouTube",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tally-vaarcoris",
+        "options": {}
+      },
+      "name": "Webhook Tally",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "webhookId": "UUID-HERE"
+    },
+    {
+      "parameters": {
+        "title": "={{$json.body.data.fields.find(f => f.label === 'Título do Vídeo').value}}",
+        "description": "Enviado por: {{$json.body.data.fields.find(f => f.label === 'Nome').value}}",
+        "status": "unlisted",
+        "videoUrl": "={{$json.body.data.fields.find(f => f.label === 'Upload').value}}"
+      },
+      "name": "YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "videos",
+        "dataMode": "define",
+        "values": {
+          "title": "={{$json.body.data.fields.find(f => f.label === 'Título do Vídeo').value}}",
+          "author_name": "={{$json.body.data.fields.find(f => f.label === 'Nome').value}}",
+          "youtube_url": "https://youtu.be/{{$json.id}}"
+        }
+      },
+      "name": "Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Tally": {
+      "main": [
+        [
+          {
+            "node": "YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube": {
+      "main": [
+        [
+          {
+            "node": "Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
