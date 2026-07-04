@@ -1,66 +1,86 @@
 {
-  "name": "VA'ARCO-ÍRIS - Tally to YouTube",
+  "name": "VA'ARCO-ÍRIS - Tally to YouTube (FINAL)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "tally-vaarcoris",
+        "path": "tally-vaarcoiris",
         "options": {}
       },
       "name": "Webhook Tally",
       "type": "n8n-nodes-base.webhook",
-      "position": [250, 300],
-      "webhookId": "UUID-HERE"
+      "typeVersion": 1,
+      "position": [200, 300]
     },
     {
       "parameters": {
-        "title": "={{$json.body.data.fields.find(f => f.label === 'Título do Vídeo').value}}",
-        "description": "Enviado por: {{$json.body.data.fields.find(f => f.label === 'Nome').value}}",
+        "url": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Envie seu vídeo').value[0].url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Baixar Vídeo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Título').value }}",
+        "description": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Nome').value }}",
+        "categoryId": "22",
         "status": "unlisted",
-        "videoUrl": "={{$json.body.data.fields.find(f => f.label === 'Upload').value}}"
+        "inputDataFieldName": "data"
       },
       "name": "YouTube",
       "type": "n8n-nodes-base.youTube",
-      "position": [450, 300]
+      "typeVersion": 1,
+      "position": [640, 300]
     },
     {
       "parameters": {
-        "operation": "insert",
-        "table": "videos",
+        "resource": "row",
+        "operation": "create",
+        "tableId": "videos",
         "dataMode": "define",
         "values": {
-          "title": "={{$json.body.data.fields.find(f => f.label === 'Título do Vídeo').value}}",
-          "author_name": "={{$json.body.data.fields.find(f => f.label === 'Nome').value}}",
-          "youtube_url": "https://youtu.be/{{$json.id}}"
+          "values": [
+            {
+              "column": "title",
+              "value": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Título').value }}"
+            },
+            {
+              "column": "author_name",
+              "value": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Nome').value }}"
+            },
+            {
+              "column": "youtube_url",
+              "value": "=https://youtu.be/{{ $('YouTube').item.json.id }}"
+            }
+          ]
         }
       },
       "name": "Supabase",
       "type": "n8n-nodes-base.supabase",
-      "position": [650, 300]
+      "typeVersion": 1,
+      "position": [860, 300]
     }
   ],
   "connections": {
     "Webhook Tally": {
-      "main": [
-        [
-          {
-            "node": "YouTube",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Baixar Vídeo", "type": "main", "index": 0}]]
+    },
+    "Baixar Vídeo": {
+      "main": [[{"node": "YouTube", "type": "main", "index": 0}]]
     },
     "YouTube": {
-      "main": [
-        [
-          {
-            "node": "Supabase",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Supabase", "type": "main", "index": 0}]]
     }
   }
 }
