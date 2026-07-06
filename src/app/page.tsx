@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import styles from "./page.module.css";
 import { supabase } from "@/lib/supabase";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 type Video = {
   id: string;
@@ -30,6 +32,11 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // FFmpeg WebAssembly compression states
+  const [compressing, setCompressing] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState(0);
+  const ffmpegRef = useRef<FFmpeg | null>(null);
 
   const getVideoId = (url: string) => {
     let videoId = "";
@@ -127,6 +134,52 @@ export default function Home() {
     }, 10000);
   };
 
+  const loadFFmpeg = async () => {
+    if (ffmpegRef.current) return ffmpegRef.current;
+    
+    const ffmpeg = new FFmpeg();
+    ffmpeg.on("progress", ({ progress }) => {
+      setCompressionProgress(Math.round(progress * 100));
+    });
+    
+    const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+    
+    ffmpegRef.current = ffmpeg;
+    return ffmpeg;
+  };
+
+  const compressVideo = async (file: File): Promise<Blob> => {
+    const ffmpeg = await loadFFmpeg();
+    await ffmpeg.writeFile("input.mp4", await fetchFile(file));
+    
+    // We compress to standard H.264 MP4 with max width 1280px (720p)
+    // preset ultrafast makes it compile fast on client machines
+    // crf 28 is a great compromise for size and quality
+    await ffmpeg.exec([
+      "-i", "input.mp4",
+      "-vf", "scale=w='min(1280,iw)':h=-2",
+      "-vcodec", "libx264",
+      "-crf", "28",
+      "-preset", "ultrafast",
+      "output.mp4"
+    ]);
+    
+    const data = await ffmpeg.readFile("output.mp4");
+    
+    try {
+      await ffmpeg.deleteFile("input.mp4");
+      await ffmpeg.deleteFile("output.mp4");
+    } catch (e) {
+      console.error("Cleanup error in virtual FS:", e);
+    }
+    
+    return new Blob([data as Uint8Array], { type: "video/mp4" });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!videoFile || !authorName.trim() || !videoTitle.trim()) {
@@ -134,22 +187,41 @@ export default function Home() {
       return;
     }
 
-    if (videoFile.size > 50 * 1024 * 1024) {
-      setErrorMsg("O vídeo é muito grande! O limite de tamanho é 50 MB.");
-      return;
-    }
-
     setUploading(true);
     setUploadProgress(0);
+    setCompressionProgress(0);
     setErrorMsg(null);
 
-    // Sanitize filename to avoid weird character issues in URL
-    const fileExt = videoFile.name.split(".").pop();
+    let fileToUpload: Blob = videoFile;
+    let fileType = videoFile.type;
+
+    // Apply WebAssembly compression to all videos to ensure standard MP4 and smaller size
+    setCompressing(true);
+    try {
+      fileToUpload = await compressVideo(videoFile);
+      fileType = "video/mp4";
+    } catch (err: any) {
+      console.error("FFmpeg compression failed, uploading original file...", err);
+      // Fallback: if browser-side compression fails (e.g. out of memory), upload original file
+      fileToUpload = videoFile;
+      
+      // If original file is larger than 50MB, fail early
+      if (videoFile.size > 50 * 1024 * 1024) {
+        setErrorMsg("Compactação falhou e o vídeo original excede o limite de 50 MB.");
+        setUploading(false);
+        setCompressing(false);
+        return;
+      }
+    } finally {
+      setCompressing(false);
+    }
+
+    // Sanitize filename to avoid weird character issues in URL (Always saved as .mp4 due to conversion)
     const cleanFileName = `${Date.now()}_${videoTitle
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "") // remove accents
-      .replace(/[^a-z0-9]/g, "-")}.${fileExt}`;
+      .replace(/[^a-z0-9]/g, "-")}.mp4`;
 
     const filePath = cleanFileName;
 
@@ -161,7 +233,7 @@ export default function Home() {
     
     xhr.setRequestHeader("apikey", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "");
     xhr.setRequestHeader("Authorization", `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""}`);
-    xhr.setRequestHeader("Content-Type", videoFile.type);
+    xhr.setRequestHeader("Content-Type", fileType);
     xhr.setRequestHeader("x-upsert", "true");
 
     xhr.upload.onprogress = (event) => {
@@ -216,7 +288,7 @@ export default function Home() {
       setUploading(false);
     };
 
-    xhr.send(videoFile);
+    xhr.send(fileToUpload);
   };
 
   const formatDate = (dateString: string) => {
@@ -506,16 +578,33 @@ export default function Home() {
 
               {uploading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#a1a1aa" }}>
-                    <span>Enviando arquivo...</span>
-                    <span>{uploadProgress}%</span>
-                  </div>
-                  <div className={styles.progressBar} style={{ width: "100%", height: "8px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "999px", overflow: "hidden" }}>
-                    <div
-                      className={styles.progressFill}
-                      style={{ width: `${uploadProgress}%`, height: "100%", background: "var(--rainbow-gradient)", transition: "width 0.2s ease", borderRadius: "999px" }}
-                    />
-                  </div>
+                  {compressing ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#a1a1aa" }}>
+                        <span>Compactando e otimizando vídeo...</span>
+                        <span>{compressionProgress}%</span>
+                      </div>
+                      <div className={styles.progressBar} style={{ width: "100%", height: "8px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "999px", overflow: "hidden" }}>
+                        <div
+                          className={styles.progressFill}
+                          style={{ width: `${compressionProgress}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #06b6d4)", transition: "width 0.2s ease", borderRadius: "999px" }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#a1a1aa" }}>
+                        <span>Enviando arquivo...</span>
+                        <span>{uploadProgress}%</span>
+                      </div>
+                      <div className={styles.progressBar} style={{ width: "100%", height: "8px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "999px", overflow: "hidden" }}>
+                        <div
+                          className={styles.progressFill}
+                          style={{ width: `${uploadProgress}%`, height: "100%", background: "var(--rainbow-gradient)", transition: "width 0.2s ease", borderRadius: "999px" }}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
