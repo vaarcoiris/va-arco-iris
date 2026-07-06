@@ -516,7 +516,7 @@ export default function Home() {
             </button>
             <h3 style={{ marginBottom: "1rem" }}>Upload de Vídeo</h3>
             <p style={{ color: "#a1a1aa", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
-              Compartilhe seu vídeo diretamente com a equipe. Limite de 50 MB por envio.
+              Compartilhe seu vídeo diretamente com a equipe. Arquivos de até 300 MB serão compactados automaticamente.
             </p>
             
             {errorMsg && (
@@ -563,8 +563,8 @@ export default function Home() {
                   onChange={(e) => {
                     const file = e.target.files?.[0] || null;
                     setVideoFile(file);
-                    if (file && file.size > 50 * 1024 * 1024) {
-                      setErrorMsg("O vídeo excede o limite de 50 MB.");
+                    if (file && file.size > 300 * 1024 * 1024) {
+                      setErrorMsg("O vídeo excede o limite de 300 MB.");
                     } else {
                       setErrorMsg(null);
                     }
@@ -573,7 +573,7 @@ export default function Home() {
                   disabled={uploading}
                   style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--glass-border)", backgroundColor: "rgba(255,255,255,0.05)", color: "white", outline: "none" }}
                 />
-                <span style={{ fontSize: "0.8rem", color: "#a1a1aa" }}>Formatos recomendados: .mp4, .mov, .avi. Máximo 50 MB.</span>
+                <span style={{ fontSize: "0.8rem", color: "#a1a1aa" }}>Formatos recomendados: .mp4, .mov, .avi. Máximo 300 MB (será compactado para menos de 50 MB).</span>
               </div>
 
               {uploading && (
@@ -621,7 +621,7 @@ export default function Home() {
                 <button
                   type="submit"
                   className="btn btn-rainbow"
-                  disabled={uploading || (videoFile ? videoFile.size > 50 * 1024 * 1024 : true)}
+                  disabled={uploading || (videoFile ? videoFile.size > 300 * 1024 * 1024 : true)}
                   style={{ padding: "0.75rem 2rem", borderRadius: "12px" }}
                 >
                   {uploading ? "Processando..." : "Enviar Vídeo"}
