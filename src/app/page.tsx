@@ -23,6 +23,14 @@ export default function Home() {
   const [isPolling, setIsPolling] = useState(false);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
 
+  // Custom Form States
+  const [authorName, setAuthorName] = useState("");
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const getVideoId = (url: string) => {
     let videoId = "";
     if (url.includes("youtu.be/")) {
@@ -117,6 +125,98 @@ export default function Home() {
         setIsPolling(false);
       }
     }, 10000);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!videoFile || !authorName.trim() || !videoTitle.trim()) {
+      setErrorMsg("Por favor, preencha todos os campos e selecione um vídeo.");
+      return;
+    }
+
+    if (videoFile.size > 50 * 1024 * 1024) {
+      setErrorMsg("O vídeo é muito grande! O limite de tamanho é 50 MB.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setErrorMsg(null);
+
+    // Sanitize filename to avoid weird character issues in URL
+    const fileExt = videoFile.name.split(".").pop();
+    const cleanFileName = `${Date.now()}_${videoTitle
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove accents
+      .replace(/[^a-z0-9]/g, "-")}.${fileExt}`;
+
+    const filePath = cleanFileName;
+
+    // We upload using XMLHttpRequest so we can get progress feedback
+    const xhr = new XMLHttpRequest();
+    const uploadUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/temp-videos/${filePath}`;
+
+    xhr.open("POST", uploadUrl, true);
+    
+    xhr.setRequestHeader("apikey", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "");
+    xhr.setRequestHeader("Authorization", `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""}`);
+    xhr.setRequestHeader("Content-Type", videoFile.type);
+    xhr.setRequestHeader("x-upsert", "true");
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress(percent);
+      }
+    };
+
+    xhr.onload = async () => {
+      if (xhr.status === 200 || xhr.status === 201) {
+        const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/temp-videos/${filePath}`;
+        
+        try {
+          // Notify n8n Webhook
+          const webhookUrl = "https://n8n-vaarcoiris.onrender.com/webhook/tally-vaarcoiris";
+          const response = await fetch(webhookUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              title: videoTitle,
+              author_name: authorName,
+              video_url: publicUrl,
+            }),
+          });
+
+          if (response.ok) {
+            setAuthorName("");
+            setVideoTitle("");
+            setVideoFile(null);
+            setUploading(false);
+            handleUploadSuccess();
+          } else {
+            throw new Error("Erro ao notificar automação.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          setErrorMsg("Upload concluído, mas falhou ao iniciar a publicação. Contate o administrador.");
+          setUploading(false);
+        }
+      } else {
+        console.error("Upload error response:", xhr.responseText);
+        setErrorMsg("Erro ao enviar o vídeo para o armazenamento. Tente novamente.");
+        setUploading(false);
+      }
+    };
+
+    xhr.onerror = () => {
+      setErrorMsg("Erro de rede durante o upload.");
+      setUploading(false);
+    };
+
+    xhr.send(videoFile);
   };
 
   const formatDate = (dateString: string) => {
@@ -329,7 +429,7 @@ export default function Home() {
       {isModalOpen && (
         <div
           className={styles.modalOverlay}
-          onClick={() => setIsModalOpen(false)}
+          onClick={() => !uploading && setIsModalOpen(false)}
         >
           <div
             className={styles.modalContent}
@@ -337,25 +437,108 @@ export default function Home() {
           >
             <button
               className={styles.closeBtn}
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => !uploading && setIsModalOpen(false)}
+              disabled={uploading}
             >
               ×
             </button>
             <h3 style={{ marginBottom: "1rem" }}>Upload de Vídeo</h3>
-            <p style={{ color: "#a1a1aa", marginBottom: "2rem" }}>
-              Selecione o vídeo que deseja compartilhar com a equipe.
+            <p style={{ color: "#a1a1aa", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
+              Compartilhe seu vídeo diretamente com a equipe. Limite de 50 MB por envio.
             </p>
-            <div className={styles.iframeContainer}>
-              <iframe
-                src="https://tally.so/r/q4gX57?transparentBackground=1"
-                width="100%"
-                height="100%"
-                frameBorder="0"
-                marginHeight={0}
-                marginWidth={0}
-                title="Upload de Vídeo"
-              />
-            </div>
+            
+            {errorMsg && (
+              <div className={styles.errorBanner} style={{ color: "#f87171", backgroundColor: "rgba(248, 113, 113, 0.1)", border: "1px solid rgba(248, 113, 113, 0.2)", padding: "0.75rem", borderRadius: "12px", marginBottom: "1rem", fontSize: "0.9rem" }}>
+                ⚠️ {errorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className={styles.uploadForm} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+              <div className={styles.formGroup} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <label htmlFor="authorName" style={{ fontSize: "0.9rem", fontWeight: 500, color: "#e4e4e7" }}>Seu Nome</label>
+                <input
+                  type="text"
+                  id="authorName"
+                  value={authorName}
+                  onChange={(e) => setAuthorName(e.target.value)}
+                  placeholder="Ex: Carlos Mele"
+                  required
+                  disabled={uploading}
+                  style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--glass-border)", backgroundColor: "rgba(255,255,255,0.05)", color: "white", outline: "none" }}
+                />
+              </div>
+
+              <div className={styles.formGroup} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <label htmlFor="videoTitle" style={{ fontSize: "0.9rem", fontWeight: 500, color: "#e4e4e7" }}>Título do Vídeo</label>
+                <input
+                  type="text"
+                  id="videoTitle"
+                  value={videoTitle}
+                  onChange={(e) => setVideoTitle(e.target.value)}
+                  placeholder="Ex: Treino Técnico - Sábado"
+                  required
+                  disabled={uploading}
+                  style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--glass-border)", backgroundColor: "rgba(255,255,255,0.05)", color: "white", outline: "none" }}
+                />
+              </div>
+
+              <div className={styles.formGroup} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <label htmlFor="videoFile" style={{ fontSize: "0.9rem", fontWeight: 500, color: "#e4e4e7" }}>Arquivo de Vídeo</label>
+                <input
+                  type="file"
+                  id="videoFile"
+                  accept="video/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setVideoFile(file);
+                    if (file && file.size > 50 * 1024 * 1024) {
+                      setErrorMsg("O vídeo excede o limite de 50 MB.");
+                    } else {
+                      setErrorMsg(null);
+                    }
+                  }}
+                  required
+                  disabled={uploading}
+                  style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--glass-border)", backgroundColor: "rgba(255,255,255,0.05)", color: "white", outline: "none" }}
+                />
+                <span style={{ fontSize: "0.8rem", color: "#a1a1aa" }}>Formatos recomendados: .mp4, .mov, .avi. Máximo 50 MB.</span>
+              </div>
+
+              {uploading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#a1a1aa" }}>
+                    <span>Enviando arquivo...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className={styles.progressBar} style={{ width: "100%", height: "8px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "999px", overflow: "hidden" }}>
+                    <div
+                      className={styles.progressFill}
+                      style={{ width: `${uploadProgress}%`, height: "100%", background: "var(--rainbow-gradient)", transition: "width 0.2s ease", borderRadius: "999px" }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", marginTop: "1rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="btn btn-primary"
+                  disabled={uploading}
+                  style={{ padding: "0.75rem 1.5rem", borderRadius: "12px" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-rainbow"
+                  disabled={uploading || (videoFile ? videoFile.size > 50 * 1024 * 1024 : true)}
+                  style={{ padding: "0.75rem 2rem", borderRadius: "12px" }}
+                >
+                  {uploading ? "Processando..." : "Enviar Vídeo"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

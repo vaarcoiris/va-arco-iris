@@ -1,5 +1,5 @@
 {
-  "name": "VA'ARCO-ÍRIS - Tally to YouTube (FINAL)",
+  "name": "VA'ARCO-ÍRIS - Site Upload to YouTube (FINAL)",
   "nodes": [
     {
       "parameters": {
@@ -7,14 +7,14 @@
         "path": "tally-vaarcoiris",
         "options": {}
       },
-      "name": "Webhook Tally",
+      "name": "Webhook Site",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [200, 300]
+      "position": [150, 300]
     },
     {
       "parameters": {
-        "url": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Envie seu vídeo').value[0].url }}",
+        "url": "={{ $json.body.video_url }}",
         "options": {
           "response": {
             "response": {
@@ -26,14 +26,14 @@
       "name": "Baixar Vídeo",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [420, 300]
+      "position": [370, 300]
     },
     {
       "parameters": {
         "resource": "video",
         "operation": "upload",
-        "title": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Título').value }}",
-        "description": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Nome').value }}",
+        "title": "={{ $('Webhook Site').item.json.body.title }}",
+        "description": "={{ $('Webhook Site').item.json.body.author_name }}",
         "categoryId": "22",
         "status": "unlisted",
         "inputDataFieldName": "data"
@@ -41,7 +41,7 @@
       "name": "YouTube",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [640, 300]
+      "position": [590, 300]
     },
     {
       "parameters": {
@@ -53,11 +53,11 @@
           "values": [
             {
               "column": "title",
-              "value": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Título').value }}"
+              "value": "={{ $('Webhook Site').item.json.body.title }}"
             },
             {
               "column": "author_name",
-              "value": "={{ $('Webhook Tally').item.json.body.data.fields.find(f => f.label === 'Nome').value }}"
+              "value": "={{ $('Webhook Site').item.json.body.author_name }}"
             },
             {
               "column": "youtube_url",
@@ -69,11 +69,37 @@
       "name": "Supabase",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [860, 300]
+      "position": [810, 300]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://tcpoplobrdatwupildhq.supabase.co/storage/v1/object/temp-videos/{{ $('Webhook Site').item.json.body.video_url.split('/').pop() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headers": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer YOUR_SUPABASE_SERVICE_ROLE_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Deletar Temporário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1030, 300]
     }
   ],
   "connections": {
-    "Webhook Tally": {
+    "Webhook Site": {
       "main": [[{"node": "Baixar Vídeo", "type": "main", "index": 0}]]
     },
     "Baixar Vídeo": {
@@ -81,6 +107,9 @@
     },
     "YouTube": {
       "main": [[{"node": "Supabase", "type": "main", "index": 0}]]
+    },
+    "Supabase": {
+      "main": [[{"node": "Deletar Temporário", "type": "main", "index": 0}]]
     }
   }
 }
