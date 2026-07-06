@@ -156,14 +156,14 @@ export default function Home() {
     const ffmpeg = await loadFFmpeg();
     await ffmpeg.writeFile("input.mp4", await fetchFile(file));
     
-    // We compress to standard H.264 MP4 with max width 1280px (720p)
+    // We compress to standard H.264 MP4 with max width 1920px (1080p Full HD)
     // preset ultrafast makes it compile fast on client machines
-    // crf 28 is a great compromise for size and quality
+    // crf 26 provides a premium look (excellent quality and very small file size)
     await ffmpeg.exec([
       "-i", "input.mp4",
-      "-vf", "scale=w='min(1280,iw)':h=-2",
+      "-vf", "scale=w='min(1920,iw)':h=-2",
       "-vcodec", "libx264",
-      "-crf", "28",
+      "-crf", "26",
       "-preset", "ultrafast",
       "output.mp4"
     ]);
