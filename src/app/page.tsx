@@ -18,6 +18,7 @@ export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
@@ -33,20 +34,23 @@ export default function Home() {
   };
 
   const fetchVideos = useCallback(async () => {
+    setIsRefreshing(true);
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
       setIsLoading(false);
-      return;
+      setIsRefreshing(false);
+      return [];
     }
     const { data, error } = await supabase
       .from("videos")
       .select("*")
       .order("created_at", { ascending: false });
 
+    let validVideos: Video[] = [];
     if (error) {
       console.error("Error fetching videos:", error);
     } else if (data) {
       // Filter out invalid/test entries (empty or missing youtube ID)
-      const validVideos = data.filter(
+      validVideos = data.filter(
         (v) =>
           v.youtube_url &&
           v.youtube_url.length > 20 &&
@@ -57,6 +61,8 @@ export default function Home() {
       setVideos(validVideos);
     }
     setIsLoading(false);
+    setIsRefreshing(false);
+    return validVideos;
   }, []);
 
   // Initial fetch
@@ -67,33 +73,50 @@ export default function Home() {
   // Listen for Tally form submission
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (
-        event.data?.event === "Tally.FormSubmitted" ||
-        (typeof event.data === "string" && event.data.includes("tally-form-submitted"))
-      ) {
+      let payload = event.data;
+      if (typeof payload === "string") {
+        try {
+          payload = JSON.parse(payload);
+        } catch (e) {
+          // not JSON
+        }
+      }
+      
+      const isSubmitted = 
+        payload?.event === "Tally.FormSubmitted" ||
+        (typeof event.data === "string" && event.data.includes("Tally.FormSubmitted"));
+
+      if (isSubmitted) {
         handleUploadSuccess();
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [videos.length]); // Keep dependency updated
 
   const handleUploadSuccess = () => {
     setIsModalOpen(false);
     setUploadSuccess(true);
     setIsPolling(true);
 
-    // Poll for new video every 30 seconds, up to 10 minutes
+    const startCount = videos.length;
+
+    // Poll for new video every 10 seconds, up to 5 minutes (30 attempts)
     let attempts = 0;
-    const maxAttempts = 20;
+    const maxAttempts = 30;
     const interval = setInterval(async () => {
       attempts++;
-      await fetchVideos();
-      if (attempts >= maxAttempts) {
+      const currentVideos = await fetchVideos();
+      
+      // Stop polling early if we detect a new video in the database
+      if (currentVideos.length > startCount) {
+        clearInterval(interval);
+        setIsPolling(false);
+      } else if (attempts >= maxAttempts) {
         clearInterval(interval);
         setIsPolling(false);
       }
-    }, 30000);
+    }, 10000);
   };
 
   const formatDate = (dateString: string) => {
@@ -191,9 +214,10 @@ export default function Home() {
               <button
                 className={`${styles.filterBtn} ${styles.active}`}
                 onClick={fetchVideos}
+                disabled={isRefreshing}
                 title="Atualizar feed"
               >
-                ↻ Atualizar
+                {isRefreshing ? "Carregando..." : "↻ Atualizar"}
               </button>
               <button className={styles.filterBtn}>Todos</button>
               <button className={styles.filterBtn}>Treinos</button>
