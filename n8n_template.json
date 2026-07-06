@@ -61,7 +61,7 @@
             },
             {
               "column": "youtube_url",
-              "value": "=https://youtu.be/{{ $('YouTube').item.json.id }}"
+              "value": "=https://youtu.be/{{ $json.uploadId }}"
             }
           ]
         }

@@ -168,6 +168,44 @@
   border-bottom: 1px solid var(--glass-border);
 }
 
+.thumbnailContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.thumbnailImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.thumbnailOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.35);
+  transition: background-color 0.3s ease;
+}
+
+.videoCard:hover .thumbnailImage {
+  transform: scale(1.05);
+}
+
+.videoCard:hover .thumbnailOverlay {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
 .playIcon {
   width: 48px;
   height: 48px;

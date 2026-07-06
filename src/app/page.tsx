@@ -20,6 +20,17 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+
+  const getVideoId = (url: string) => {
+    let videoId = "";
+    if (url.includes("youtu.be/")) {
+      videoId = url.split("youtu.be/")[1]?.split("?")[0];
+    } else if (url.includes("v=")) {
+      videoId = url.split("v=")[1]?.split("&")[0];
+    }
+    return videoId;
+  };
 
   const fetchVideos = useCallback(async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -94,12 +105,7 @@ export default function Home() {
   };
 
   const getEmbedUrl = (url: string) => {
-    let videoId = "";
-    if (url.includes("youtu.be/")) {
-      videoId = url.split("youtu.be/")[1]?.split("?")[0];
-    } else if (url.includes("v=")) {
-      videoId = url.split("v=")[1]?.split("&")[0];
-    }
+    const videoId = getVideoId(url);
     if (videoId) return `https://www.youtube.com/embed/${videoId}`;
     return url;
   };
@@ -199,37 +205,58 @@ export default function Home() {
             {isLoading ? (
               <p style={{ color: "#a1a1aa" }}>Carregando vídeos...</p>
             ) : videos.length > 0 ? (
-              videos.map((video) => (
-                <div
-                  key={video.id}
-                  className={`${styles.videoCard} glass-panel`}
-                >
+              videos.map((video) => {
+                const videoId = getVideoId(video.youtube_url);
+                const isPlaying = activeVideoId === video.id;
+
+                return (
                   <div
-                    className={styles.videoThumbnail}
-                    style={{ padding: 0, position: "relative" }}
+                    key={video.id}
+                    className={`${styles.videoCard} glass-panel`}
                   >
-                    <iframe
-                      src={getEmbedUrl(video.youtube_url)}
-                      title={video.title}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        border: "none",
-                      }}
-                      allowFullScreen
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    />
+                    <div
+                      className={styles.videoThumbnail}
+                      style={{ padding: 0, position: "relative" }}
+                    >
+                      {isPlaying ? (
+                        <iframe
+                          src={`${getEmbedUrl(video.youtube_url)}?autoplay=1`}
+                          title={video.title}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            border: "none",
+                          }}
+                          allowFullScreen
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        />
+                      ) : (
+                        <div
+                          onClick={() => setActiveVideoId(video.id)}
+                          className={styles.thumbnailContainer}
+                        >
+                          <img
+                            src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
+                            alt={video.title}
+                            className={styles.thumbnailImage}
+                          />
+                          <div className={styles.thumbnailOverlay}>
+                            <div className={styles.playIcon}>▶</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className={styles.videoInfo}>
+                      <h4>{video.title}</h4>
+                      <p>Enviado por: {video.author_name}</p>
+                      <span>{formatDate(video.created_at)}</span>
+                    </div>
                   </div>
-                  <div className={styles.videoInfo}>
-                    <h4>{video.title}</h4>
-                    <p>Enviado por: {video.author_name}</p>
-                    <span>{formatDate(video.created_at)}</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className={`${styles.videoCard} glass-panel`}>
                 <div className={styles.videoThumbnail}>
