@@ -84,34 +84,11 @@ export default function Home() {
 
   // Initial fetch
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchVideos();
   }, [fetchVideos]);
 
-  // Listen for Tally form submission
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      let payload = event.data;
-      if (typeof payload === "string") {
-        try {
-          payload = JSON.parse(payload);
-        } catch (e) {
-          // not JSON
-        }
-      }
-      
-      const isSubmitted = 
-        payload?.event === "Tally.FormSubmitted" ||
-        (typeof event.data === "string" && event.data.includes("Tally.FormSubmitted"));
-
-      if (isSubmitted) {
-        handleUploadSuccess();
-      }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [videos.length]); // Keep dependency updated
-
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = useCallback(() => {
     setIsModalOpen(false);
     setUploadSuccess(true);
     setIsPolling(true);
@@ -134,7 +111,31 @@ export default function Home() {
         setIsPolling(false);
       }
     }, 10000);
-  };
+  }, [fetchVideos, videos.length]);
+
+  // Listen for Tally form submission
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      let payload = event.data;
+      if (typeof payload === "string") {
+        try {
+          payload = JSON.parse(payload);
+        } catch (_e) {
+          // not JSON
+        }
+      }
+      
+      const isSubmitted = 
+        payload?.event === "Tally.FormSubmitted" ||
+        (typeof event.data === "string" && event.data.includes("Tally.FormSubmitted"));
+
+      if (isSubmitted) {
+        handleUploadSuccess();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [handleUploadSuccess]);
 
   const loadFFmpeg = async () => {
     if (ffmpegRef.current) return ffmpegRef.current;
@@ -222,7 +223,7 @@ export default function Home() {
       console.error("Cleanup error in virtual FS:", e);
     }
     
-    return new Blob([data as any], { type: "video/mp4" });
+    return new Blob([data as Uint8Array], { type: "video/mp4" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -249,7 +250,7 @@ export default function Home() {
       try {
         fileToUpload = await compressVideo(currentFile);
         fileType = "video/mp4";
-      } catch (err: any) {
+      } catch (err) {
         console.error(`FFmpeg compression failed for file ${i + 1}`, err);
         fileToUpload = currentFile;
         if (currentFile.size > 50 * 1024 * 1024) {
@@ -320,7 +321,7 @@ export default function Home() {
                 } else {
                   reject(new Error(`Erro ao notificar automação do n8n para o vídeo ${i + 1}.`));
                 }
-              } catch (err: any) {
+              } catch (err) {
                 console.error(err);
                 reject(new Error(`Falha ao iniciar a publicação do vídeo ${i + 1} no n8n.`));
               }
@@ -336,8 +337,9 @@ export default function Home() {
 
           xhr.send(fileToUpload);
         });
-      } catch (uploadError: any) {
-        setErrorMsg(uploadError.message || `Erro ao processar o vídeo ${i + 1}.`);
+      } catch (uploadError: unknown) {
+        const error = uploadError as Error;
+        setErrorMsg(error.message || `Erro ao processar o vídeo ${i + 1}.`);
         setUploading(false);
         return; // Break the loop, stop further processing
       }
@@ -593,7 +595,7 @@ export default function Home() {
                   id="authorName"
                   value={authorName}
                   onChange={(e) => setAuthorName(e.target.value)}
-                  placeholder="Ex: Carlos Mele"
+                  placeholder="Ex: João Silva"
                   required
                   disabled={uploading}
                   style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--glass-border)", backgroundColor: "rgba(255,255,255,0.05)", color: "white", outline: "none" }}
