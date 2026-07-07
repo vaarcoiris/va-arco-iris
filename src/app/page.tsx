@@ -28,7 +28,9 @@ export default function Home() {
   // Custom Form States
   const [authorName, setAuthorName] = useState("");
   const [videoTitle, setVideoTitle] = useState("");
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoFiles, setVideoFiles] = useState<File[]>([]);
+  const [currentUploadIndex, setCurrentUploadIndex] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -152,6 +154,49 @@ export default function Home() {
     return ffmpeg;
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (uploading) return;
+
+    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('video/'));
+    if (files.length > 0) {
+      const validFiles = files.filter(file => file.size <= 300 * 1024 * 1024);
+      if (validFiles.length < files.length) {
+         setErrorMsg("Alguns arquivos excedem o limite de 300 MB e foram ignorados.");
+      } else {
+         setErrorMsg(null);
+      }
+      setVideoFiles(prev => [...prev, ...validFiles]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const validFiles = files.filter(file => file.size <= 300 * 1024 * 1024);
+    if (validFiles.length < files.length) {
+       setErrorMsg("Alguns arquivos excedem o limite de 300 MB e foram ignorados.");
+    } else {
+       setErrorMsg(null);
+    }
+    setVideoFiles(prev => [...prev, ...validFiles]);
+  };
+
+  const removeFile = (indexToRemove: number) => {
+    setVideoFiles(prev => prev.filter((_, index) => index !== indexToRemove));
+  };
+
   const compressVideo = async (file: File): Promise<Blob> => {
     const ffmpeg = await loadFFmpeg();
     await ffmpeg.writeFile("input.mp4", await fetchFile(file));
@@ -182,120 +227,128 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!videoFile || !authorName.trim() || !videoTitle.trim()) {
-      setErrorMsg("Por favor, preencha todos os campos e selecione um vídeo.");
+    if (videoFiles.length === 0 || !authorName.trim() || !videoTitle.trim()) {
+      setErrorMsg("Por favor, preencha todos os campos e adicione pelo menos um vídeo.");
       return;
     }
 
     setUploading(true);
-    setUploadProgress(0);
-    setCompressionProgress(0);
     setErrorMsg(null);
 
-    let fileToUpload: Blob = videoFile;
-    let fileType = videoFile.type;
-
-    // Apply WebAssembly compression to all videos to ensure standard MP4 and smaller size
-    setCompressing(true);
-    try {
-      fileToUpload = await compressVideo(videoFile);
-      fileType = "video/mp4";
-    } catch (err: any) {
-      console.error("FFmpeg compression failed, uploading original file...", err);
-      // Fallback: if browser-side compression fails (e.g. out of memory), upload original file
-      fileToUpload = videoFile;
+    // Process each file sequentially
+    for (let i = 0; i < videoFiles.length; i++) {
+      setCurrentUploadIndex(i);
+      setUploadProgress(0);
+      setCompressionProgress(0);
       
-      // If original file is larger than 50MB, fail early
-      if (videoFile.size > 50 * 1024 * 1024) {
-        setErrorMsg("Compactação falhou e o vídeo original excede o limite de 50 MB.");
-        setUploading(false);
+      const currentFile = videoFiles[i];
+      let fileToUpload: Blob = currentFile;
+      let fileType = currentFile.type;
+
+      setCompressing(true);
+      try {
+        fileToUpload = await compressVideo(currentFile);
+        fileType = "video/mp4";
+      } catch (err: any) {
+        console.error(`FFmpeg compression failed for file ${i + 1}`, err);
+        fileToUpload = currentFile;
+        if (currentFile.size > 50 * 1024 * 1024) {
+          setErrorMsg(`A compactação falhou e o vídeo ${i + 1} original excede 50 MB. Cancelando os envios restantes.`);
+          setUploading(false);
+          setCompressing(false);
+          return;
+        }
+      } finally {
         setCompressing(false);
+      }
+
+      if (fileToUpload.size > 50 * 1024 * 1024) {
+        setErrorMsg(`O vídeo ${i + 1} (mesmo compactado) ficou com ${Math.round(fileToUpload.size / (1024 * 1024))} MB e excede 50 MB. Cancelando os envios restantes.`);
+        setUploading(false);
         return;
       }
-    } finally {
-      setCompressing(false);
-    }
 
-    // Verify final compressed file size before uploading to Supabase
-    if (fileToUpload.size > 50 * 1024 * 1024) {
-      setErrorMsg(`O vídeo (mesmo compactado) ficou com ${Math.round(fileToUpload.size / (1024 * 1024))} MB e excede o limite de 50 MB do Supabase. Tente enviar um vídeo menor ou mais curto.`);
-      setUploading(false);
-      return;
-    }
-
-    // Sanitize filename to avoid weird character issues in URL (Always saved as .mp4 due to conversion)
-    const cleanFileName = `${Date.now()}_${videoTitle
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // remove accents
-      .replace(/[^a-z0-9]/g, "-")}.mp4`;
-
-    const filePath = cleanFileName;
-
-    // We upload using XMLHttpRequest so we can get progress feedback
-    const xhr = new XMLHttpRequest();
-    const uploadUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/temp-videos/${filePath}`;
-
-    xhr.open("POST", uploadUrl, true);
-    
-    xhr.setRequestHeader("apikey", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "");
-    xhr.setRequestHeader("Authorization", `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""}`);
-    xhr.setRequestHeader("Content-Type", fileType);
-    xhr.setRequestHeader("x-upsert", "true");
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100);
-        setUploadProgress(percent);
+      // Append index to title if there are multiple files
+      let finalTitle = videoTitle;
+      if (videoFiles.length > 1) {
+        finalTitle = `${videoTitle} (${i + 1}/${videoFiles.length})`;
       }
-    };
 
-    xhr.onload = async () => {
-      if (xhr.status === 200 || xhr.status === 201) {
-        const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/temp-videos/${filePath}`;
-        
-        try {
-          // Notify n8n Webhook
-          const webhookUrl = "https://n8n-vaarcoiris.onrender.com/webhook/tally-vaarcoiris";
-          const response = await fetch(webhookUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              title: videoTitle,
-              author_name: authorName,
-              video_url: publicUrl,
-            }),
-          });
+      const cleanFileName = `${Date.now()}_${finalTitle
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // remove accents
+        .replace(/[^a-z0-9]/g, "-")}.mp4`;
 
-          if (response.ok) {
-            setAuthorName("");
-            setVideoTitle("");
-            setVideoFile(null);
-            setUploading(false);
-            handleUploadSuccess();
-          } else {
-            throw new Error("Erro ao notificar automação.");
-          }
-        } catch (err: any) {
-          console.error(err);
-          setErrorMsg("Upload concluído, mas falhou ao iniciar a publicação. Contate o administrador.");
-          setUploading(false);
-        }
-      } else {
-        console.error("Upload error response:", xhr.responseText);
-        setErrorMsg("Erro ao enviar o vídeo para o armazenamento. Tente novamente.");
+      const filePath = cleanFileName;
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const uploadUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/temp-videos/${filePath}`;
+
+          xhr.open("POST", uploadUrl, true);
+          xhr.setRequestHeader("apikey", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "");
+          xhr.setRequestHeader("Authorization", `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""}`);
+          xhr.setRequestHeader("Content-Type", fileType);
+          xhr.setRequestHeader("x-upsert", "true");
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setUploadProgress(percent);
+            }
+          };
+
+          xhr.onload = async () => {
+            if (xhr.status === 200 || xhr.status === 201) {
+              const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/temp-videos/${filePath}`;
+              try {
+                const webhookUrl = "https://n8n-vaarcoiris.onrender.com/webhook/tally-vaarcoiris";
+                const response = await fetch(webhookUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    title: finalTitle,
+                    author_name: authorName,
+                    video_url: publicUrl,
+                  }),
+                });
+
+                if (response.ok) {
+                  resolve();
+                } else {
+                  reject(new Error(`Erro ao notificar automação do n8n para o vídeo ${i + 1}.`));
+                }
+              } catch (err: any) {
+                console.error(err);
+                reject(new Error(`Falha ao iniciar a publicação do vídeo ${i + 1} no n8n.`));
+              }
+            } else {
+              console.error("Upload error response:", xhr.responseText);
+              reject(new Error(`Erro ao enviar o vídeo ${i + 1} para o armazenamento.`));
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error(`Erro de rede durante o upload do vídeo ${i + 1}.`));
+          };
+
+          xhr.send(fileToUpload);
+        });
+      } catch (uploadError: any) {
+        setErrorMsg(uploadError.message || `Erro ao processar o vídeo ${i + 1}.`);
         setUploading(false);
+        return; // Break the loop, stop further processing
       }
-    };
+    }
 
-    xhr.onerror = () => {
-      setErrorMsg("Erro de rede durante o upload.");
-      setUploading(false);
-    };
-
-    xhr.send(fileToUpload);
+    // Finished processing all files successfully
+    setAuthorName("");
+    setVideoTitle("");
+    setVideoFiles([]);
+    setUploading(false);
+    handleUploadSuccess();
   };
 
   const formatDate = (dateString: string) => {
@@ -562,33 +615,73 @@ export default function Home() {
               </div>
 
               <div className={styles.formGroup} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <label htmlFor="videoFile" style={{ fontSize: "0.9rem", fontWeight: 500, color: "#e4e4e7" }}>Arquivo de Vídeo</label>
-                <input
-                  type="file"
-                  id="videoFile"
-                  accept="video/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setVideoFile(file);
-                    if (file && file.size > 300 * 1024 * 1024) {
-                      setErrorMsg("O vídeo excede o limite de 300 MB.");
-                    } else {
-                      setErrorMsg(null);
-                    }
+                <label style={{ fontSize: "0.9rem", fontWeight: 500, color: "#e4e4e7" }}>Arquivos de Vídeo</label>
+                <div 
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  style={{
+                    width: "100%", 
+                    padding: "2rem 1rem", 
+                    borderRadius: "12px", 
+                    border: `2px dashed ${isDragging ? "var(--accent)" : "rgba(255,255,255,0.2)"}`, 
+                    backgroundColor: isDragging ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.02)", 
+                    color: "white", 
+                    textAlign: "center",
+                    cursor: uploading ? "default" : "pointer",
+                    transition: "all 0.2s ease"
                   }}
-                  required
-                  disabled={uploading}
-                  style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: "12px", border: "1px solid var(--glass-border)", backgroundColor: "rgba(255,255,255,0.05)", color: "white", outline: "none" }}
-                />
-                <span style={{ fontSize: "0.8rem", color: "#a1a1aa" }}>Formatos recomendados: .mp4, .mov, .avi. Máximo 300 MB (será compactado para menos de 50 MB).</span>
+                  onClick={() => !uploading && document.getElementById("videoFilesInput")?.click()}
+                >
+                  <input
+                    type="file"
+                    id="videoFilesInput"
+                    accept="video/*"
+                    multiple
+                    onChange={handleFileChange}
+                    disabled={uploading}
+                    style={{ display: "none" }}
+                  />
+                  <p style={{ margin: 0, color: isDragging ? "white" : "#a1a1aa" }}>
+                    {isDragging ? "Solte os vídeos aqui..." : "Arraste e solte vídeos aqui ou clique para selecionar"}
+                  </p>
+                </div>
+                
+                {videoFiles.length > 0 && (
+                  <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <p style={{ fontSize: "0.85rem", color: "#e4e4e7", fontWeight: 500 }}>Vídeos selecionados ({videoFiles.length}):</p>
+                    {videoFiles.map((file, idx) => (
+                      <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(255,255,255,0.05)", padding: "0.5rem 0.75rem", borderRadius: "8px", fontSize: "0.85rem" }}>
+                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "200px" }}>{file.name}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                          <span style={{ color: "#a1a1aa" }}>{Math.round(file.size / (1024 * 1024))} MB</span>
+                          {!uploading && (
+                            <button 
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                              style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "1.2rem", padding: "0", lineHeight: "1" }}
+                              title="Remover"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <span style={{ fontSize: "0.8rem", color: "#a1a1aa", marginTop: "0.25rem" }}>Formatos recomendados: .mp4, .mov, .avi. Máximo 300 MB por arquivo (serão processados e enviados em fila).</span>
               </div>
 
               {uploading && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                  <div style={{ fontSize: "0.9rem", fontWeight: 500, color: "white", marginBottom: "0.25rem" }}>
+                    Processando vídeo {currentUploadIndex + 1} de {videoFiles.length}...
+                  </div>
                   {compressing ? (
                     <>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#a1a1aa" }}>
-                        <span>Compactando e otimizando vídeo...</span>
+                        <span>Compactando e otimizando...</span>
                         <span>{compressionProgress}%</span>
                       </div>
                       <div className={styles.progressBar} style={{ width: "100%", height: "8px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "999px", overflow: "hidden" }}>
@@ -628,10 +721,10 @@ export default function Home() {
                 <button
                   type="submit"
                   className="btn btn-rainbow"
-                  disabled={uploading || (videoFile ? videoFile.size > 300 * 1024 * 1024 : true)}
+                  disabled={uploading || videoFiles.length === 0}
                   style={{ padding: "0.75rem 2rem", borderRadius: "12px" }}
                 >
-                  {uploading ? "Processando..." : "Enviar Vídeo"}
+                  {uploading ? "Processando Fila..." : "Enviar Vídeo(s)"}
                 </button>
               </div>
             </form>
