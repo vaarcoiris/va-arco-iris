@@ -223,7 +223,7 @@ export default function Home() {
       console.error("Cleanup error in virtual FS:", e);
     }
     
-    return new Blob([data as Uint8Array], { type: "video/mp4" });
+    return new Blob([data as any], { type: "video/mp4" });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
