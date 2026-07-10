@@ -596,7 +596,7 @@ export default function Home() {
       </main>
 
       <footer className={styles.footer}>
-        <p>VA&apos;ARCO-ÍRIS © {new Date().getFullYear()} - Um projeto Aurora</p>
+        <p>VA&apos;ARCO-ÍRIS © {new Date().getFullYear()}</p>
       </footer>
 
       {isModalOpen && (
