@@ -374,8 +374,8 @@ export default function Home() {
           <Image
             src="/logo.jpeg"
             alt="VA'ARCO-ÍRIS Logo"
-            width={48}
-            height={48}
+            width={80}
+            height={80}
             className={styles.logo}
             unoptimized
           />
@@ -553,6 +553,45 @@ export default function Home() {
           >
             Fazer Upload Agora
           </button>
+        </section>
+        <section id="sobre" className={`${styles.aboutSection} glass-panel`}>
+          <div className={styles.aboutHeader}>
+            <span className={styles.aboutEmoji}>🌈</span>
+            <h3>Sobre o VA'ARCO-ÍRIS</h3>
+            <p>Uma alegria ter você conosco! Nossa caminhada é guiada pelo respeito, parceria e conexão nas águas.</p>
+          </div>
+          
+          <div className={styles.aboutGrid}>
+            <div className={styles.aboutCard}>
+              <div className={styles.aboutCardIcon}>🌺</div>
+              <h4>Nossas Canoas</h4>
+              <p>Hoje o projeto conta com duas canoas para nossos treinos e passeios:</p>
+              <ul>
+                <li><strong>Íris</strong> — comprada pela Betse</li>
+                <li><strong>Cacau</strong> — em sociedade com David Leão</li>
+              </ul>
+            </div>
+            
+            <div className={styles.aboutCard}>
+              <div className={styles.aboutCardIcon}>🚣‍♀️</div>
+              <h4>Horários das Remadas</h4>
+              <ul>
+                <li><strong>Seg a Sex:</strong> 7h15 e 8h30</li>
+                <li><strong>Tardes:</strong> Ocasionalmente no pôr do sol às 16h</li>
+                <li><strong>Finais de Semana:</strong> Passeios e remadas especiais</li>
+              </ul>
+            </div>
+            
+            <div className={styles.aboutCard}>
+              <div className={styles.aboutCardIcon}>✨</div>
+              <h4>Apoie o Projeto</h4>
+              <p>As remadas são gratuitas, mas a manutenção da base é coletiva. Contribua como puder e ajude a manter esse sonho vivo!</p>
+              <div className={styles.pixBox}>
+                <span>📌 PIX:</span>
+                <strong>vaarcoiris@gmail.com</strong>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
 

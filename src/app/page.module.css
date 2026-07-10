@@ -452,3 +452,127 @@
     transform: translateX(-50%) translateY(0);
   }
 }
+
+.aboutSection {
+  padding: 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+  margin-top: 2rem;
+}
+
+.aboutHeader {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.aboutEmoji {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.aboutHeader h3 {
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.aboutHeader p {
+  color: #a1a1aa;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.aboutGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+}
+
+.aboutCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 2rem;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: transform 0.2s ease;
+}
+
+.aboutCard:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.aboutCardIcon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.aboutCard h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.aboutCard p {
+  color: #a1a1aa;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.aboutCard ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  color: #a1a1aa;
+  font-size: 0.95rem;
+  padding: 0;
+  margin: 0;
+}
+
+.aboutCard ul li {
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.aboutCard ul li::before {
+  content: "•";
+  color: var(--primary);
+  position: absolute;
+  left: 0;
+  font-weight: bold;
+}
+
+.aboutCard ul li strong {
+  color: #e4e4e7;
+}
+
+.pixBox {
+  margin-top: 0.5rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px dashed rgba(16, 185, 129, 0.4);
+  padding: 1rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pixBox span {
+  font-size: 0.85rem;
+  color: #6ee7b7;
+}
+
+.pixBox strong {
+  font-size: 1.1rem;
+  color: #34d399;
+  user-select: all;
+}
